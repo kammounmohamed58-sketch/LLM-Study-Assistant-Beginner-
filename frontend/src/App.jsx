@@ -2,14 +2,20 @@ import { useState } from "react";
 
 function App() {
   const [message, setMessage] = useState("");
-  const [reply, setReply] = useState("");
+  const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
 
   const sendMessage = async () => {
     if (!message.trim()) return;
 
+    const newMessages = [
+      ...messages,
+      { role: "user", content: message }
+    ];
+
+    setMessages(newMessages);
+    setMessage("");
     setLoading(true);
-    setReply("");
 
     try {
       const response = await fetch("http://127.0.0.1:8000/chat", {
@@ -17,20 +23,34 @@ function App() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({
+          messages: newMessages,
+        }),
       });
 
       const data = await response.json();
 
       if (data.reply) {
-        setReply(data.reply);
+        setMessages([
+          ...newMessages,
+          { role: "assistant", content: data.reply }
+        ]);
       } else if (data.detail) {
-        setReply("Error: " + data.detail);
+        setMessages([
+          ...newMessages,
+          { role: "assistant", content: "Error: " + data.detail }
+        ]);
       } else {
-        setReply("Unknown error.");
+        setMessages([
+          ...newMessages,
+          { role: "assistant", content: "Unknown error." }
+        ]);
       }
     } catch (error) {
-      setReply("Error connecting to backend.");
+      setMessages([
+        ...newMessages,
+        { role: "assistant", content: "Error connecting to backend." }
+      ]);
     }
 
     setLoading(false);
@@ -40,8 +60,25 @@ function App() {
     <div style={{ maxWidth: "700px", margin: "40px auto", fontFamily: "Arial" }}>
       <h1>Study Assistant</h1>
 
+      <div>
+        {messages.map((msg, index) => (
+          <div
+            key={index}
+            style={{
+              margin: "10px 0",
+              padding: "12px",
+              borderRadius: "8px",
+              background: msg.role === "user" ? "#d1e7dd" : "#f2f2f2",
+            }}
+          >
+            <strong>{msg.role === "user" ? "You" : "Assistant"}:</strong>
+            <p>{msg.content}</p>
+          </div>
+        ))}
+      </div>
+
       <textarea
-        rows="5"
+        rows="3"
         value={message}
         onChange={(e) => setMessage(e.target.value)}
         placeholder="Ask your question..."
@@ -50,26 +87,11 @@ function App() {
 
       <button
         onClick={sendMessage}
+        disabled={loading}
         style={{ marginTop: "10px", padding: "10px 20px", fontSize: "16px" }}
       >
-        Send
+        {loading ? "Thinking..." : "Send"}
       </button>
-
-      {loading && <p>Thinking...</p>}
-
-      {reply && (
-        <div
-          style={{
-            marginTop: "20px",
-            padding: "15px",
-            background: "#f2f2f2",
-            borderRadius: "8px",
-          }}
-        >
-          <h3>Assistant:</h3>
-          <p>{reply}</p>
-        </div>
-      )}
     </div>
   );
 }

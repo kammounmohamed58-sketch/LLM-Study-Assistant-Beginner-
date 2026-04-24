@@ -4,6 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from huggingface_hub import InferenceClient
 from dotenv import load_dotenv
 import os
+from typing import List
+
 
 load_dotenv()
 
@@ -19,8 +21,12 @@ app.add_middleware(
 
 client = InferenceClient(token=os.getenv("HF_TOKEN"))
 
+class Message(BaseModel):
+    role: str
+    content: str
+
 class ChatRequest(BaseModel):
-    message: str
+    messages: List[Message]
 
 @app.get("/")
 def read_root():
@@ -29,16 +35,24 @@ def read_root():
 @app.post("/chat")
 def chat(request: ChatRequest):
     try:
+        # Convert Pydantic objects → dict
+        messages = [m.dict() for m in request.messages]
+
+        # Add system prompt at the beginning
+        messages.insert(0, {
+            "role": "system",
+            "content": "You are a helpful study assistant. Explain simply and clearly."
+        })
+
         output = client.chat_completion(
-           model="Qwen/Qwen2.5-7B-Instruct",
-            messages=[
-                {"role": "system", "content": "You are a helpful study assistant. Explain simply and clearly."},
-                {"role": "user", "content": request.message}
-            ],
+            model="Qwen/Qwen2.5-7B-Instruct",
+            messages=messages,
             max_tokens=300
         )
 
-        return {"reply": output.choices[0].message.content}
+        return {
+            "reply": output.choices[0].message.content
+        }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

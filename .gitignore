@@ -1,3 +1,14 @@
+# 🔐 Secrets
 backend/.env
+
+# 🐍 Python
 backend/venv/
+backend/__pycache__/
+*.pyc
+
+# ⚛️ Node / React
 frontend/node_modules/
+
+# 💻 OS files
+.DS_Store
+Thumbs.db
