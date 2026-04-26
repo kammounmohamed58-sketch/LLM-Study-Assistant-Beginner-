@@ -5,6 +5,7 @@ from huggingface_hub import InferenceClient
 from dotenv import load_dotenv
 import os
 from typing import List
+from database import SessionLocal, ChatMessage
 
 
 load_dotenv()
@@ -34,11 +35,11 @@ def read_root():
 
 @app.post("/chat")
 def chat(request: ChatRequest):
-    try:
-        # Convert Pydantic objects → dict
-        messages = [m.dict() for m in request.messages]
+    db = None
 
-        # Add system prompt at the beginning
+    try:
+        messages = [m.model_dump() for m in request.messages]
+
         messages.insert(0, {
             "role": "system",
             "content": "You are a helpful study assistant. Explain simply and clearly."
@@ -50,9 +51,48 @@ def chat(request: ChatRequest):
             max_tokens=300
         )
 
-        return {
-            "reply": output.choices[0].message.content
-        }
+        assistant_reply = output.choices[0].message.content
+
+        db = SessionLocal()
+
+        last_user_message = request.messages[-1]
+
+        db.add(ChatMessage(
+            role=last_user_message.role,
+            content=last_user_message.content
+        ))
+
+        db.add(ChatMessage(
+            role="assistant",
+            content=assistant_reply
+        ))
+
+        db.commit()
+
+        return {"reply": assistant_reply}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+    finally:
+        if db:
+            db.close()
+
+
+@app.get("/history")
+def get_history():
+    db = SessionLocal()
+
+    messages = db.query(ChatMessage).order_by(ChatMessage.created_at.asc()).all()
+
+    result = [
+        {
+            "role": msg.role,
+            "content": msg.content
+        }
+        for msg in messages
+    ]
+
+    db.close()
+
+    return {"messages": result}
