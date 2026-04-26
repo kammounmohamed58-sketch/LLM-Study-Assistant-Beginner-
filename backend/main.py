@@ -5,7 +5,7 @@ from huggingface_hub import InferenceClient
 from dotenv import load_dotenv
 import os
 from typing import List
-from database import SessionLocal, ChatMessage
+from database import SessionLocal, ChatMessage, ChatSession
 
 
 load_dotenv()
@@ -27,6 +27,7 @@ class Message(BaseModel):
     content: str
 
 class ChatRequest(BaseModel):
+    session_id: int | None = None
     messages: List[Message]
 
 @app.get("/")
@@ -35,9 +36,18 @@ def read_root():
 
 @app.post("/chat")
 def chat(request: ChatRequest):
-    db = None
+    db = SessionLocal()
 
     try:
+        if request.session_id:
+            session = db.query(ChatSession).filter(ChatSession.id == request.session_id).first()
+        else:
+            first_message = request.messages[-1].content[:50]
+            session = ChatSession(title=first_message)
+            db.add(session)
+            db.commit()
+            db.refresh(session)
+
         messages = [m.model_dump() for m in request.messages]
 
         messages.insert(0, {
@@ -52,31 +62,74 @@ def chat(request: ChatRequest):
         )
 
         assistant_reply = output.choices[0].message.content
-
-        db = SessionLocal()
-
         last_user_message = request.messages[-1]
 
         db.add(ChatMessage(
+            session_id=session.id,
             role=last_user_message.role,
             content=last_user_message.content
         ))
 
         db.add(ChatMessage(
+            session_id=session.id,
             role="assistant",
             content=assistant_reply
         ))
 
         db.commit()
 
-        return {"reply": assistant_reply}
+        return {
+            "reply": assistant_reply,
+            "session_id": session.id
+        }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
     finally:
-        if db:
-            db.close()
+        db.close()
+@app.get("/sessions")
+def get_sessions():
+    db = SessionLocal()
+
+    sessions = db.query(ChatSession).order_by(ChatSession.created_at.desc()).all()
+
+    result = [
+        {
+            "id": session.id,
+            "title": session.title
+        }
+        for session in sessions
+    ]
+
+    db.close()
+
+    return {"sessions": result}
+
+
+@app.get("/sessions/{session_id}/messages")
+def get_session_messages(session_id: int):
+    db = SessionLocal()
+
+    messages = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.session_id == session_id)
+        .order_by(ChatMessage.created_at.asc())
+        .all()
+    )
+
+    result = [
+        {
+            "role": msg.role,
+            "content": msg.content
+        }
+        for msg in messages
+    ]
+
+    db.close()
+
+    return {"messages": result}        
+
 
 
 @app.get("/history")
