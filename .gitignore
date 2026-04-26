@@ -5,6 +5,8 @@ backend/.env
 backend/venv/
 backend/__pycache__/
 *.pyc
+# 💾 Chat database (optional — you can keep it
+backend/chat.db
 
 # ⚛️ Node / React
 frontend/node_modules/
