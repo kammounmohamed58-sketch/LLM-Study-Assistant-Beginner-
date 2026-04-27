@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from huggingface_hub import InferenceClient
@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 import os
 from typing import List
 from database import SessionLocal, ChatMessage, ChatSession
-
+from pypdf import PdfReader
 
 load_dotenv()
 
@@ -21,6 +21,8 @@ app.add_middleware(
 )
 
 client = InferenceClient(token=os.getenv("HF_TOKEN"))
+
+pdf_text = ""
 
 class Message(BaseModel):
     role: str
@@ -149,3 +151,67 @@ def get_history():
     db.close()
 
     return {"messages": result}
+@app.post("/upload-pdf")
+async def upload_pdf(file: UploadFile = File(...)):
+    global pdf_text
+
+    try:
+        file_path = f"uploads/{file.filename}"
+
+        # save file
+        with open(file_path, "wb") as f:
+            f.write(await file.read())   # ✅ await works now
+
+        reader = PdfReader(file_path)
+
+        text = ""
+        for page in reader.pages:
+            page_text = page.extract_text()
+            if page_text:
+                text += page_text + "\n"
+
+        pdf_text = text
+
+        return {
+            "message": "PDF uploaded successfully",
+            "filename": file.filename,
+            "characters": len(pdf_text)
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class PdfQuestionRequest(BaseModel):
+    question: str
+
+@app.post("/ask-pdf")
+def ask_pdf(request: PdfQuestionRequest):
+    global pdf_text
+
+    if not pdf_text:
+        raise HTTPException(status_code=400, detail="No PDF uploaded yet")
+
+    try:
+        context = pdf_text[:6000]
+
+        output = client.chat_completion(
+            model="Qwen/Qwen2.5-7B-Instruct",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a helpful study assistant. Answer only using the PDF content when possible."
+                },
+                {
+                    "role": "user",
+                    "content": f"PDF content:\n{context}\n\nQuestion:\n{request.question}"
+                }
+            ],
+            max_tokens=400
+        )
+
+        return {
+            "reply": output.choices[0].message.content
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

@@ -7,6 +7,31 @@ function App() {
   const [sessions, setSessions] = useState([]);
   const [currentSessionId, setCurrentSessionId] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [pdfLoaded, setPdfLoaded] = useState(false);
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const uploadResponse = await fetch("http://127.0.0.1:8000/upload-pdf", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await uploadResponse.json();
+
+      if (data.message) {
+        setPdfLoaded(true);
+        alert("PDF uploaded successfully");
+      }
+    } catch (error) {
+      alert("Error uploading PDF");
+    }
+  };
 
   const loadSessions = async () => {
     try {
@@ -26,6 +51,7 @@ function App() {
       const data = await response.json();
 
       setCurrentSessionId(sessionId);
+      setPdfLoaded(false);
       setMessages(data.messages || []);
     } catch (error) {
       console.log("Could not load messages");
@@ -34,6 +60,7 @@ function App() {
 
   const newChat = () => {
     setCurrentSessionId(null);
+    setPdfLoaded(false);
     setMessages([]);
     setMessage("");
   };
@@ -52,13 +79,21 @@ function App() {
     setLoading(true);
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const url = pdfLoaded
+        ? "http://127.0.0.1:8000/ask-pdf"
+        : "http://127.0.0.1:8000/chat";
+
+      const body = pdfLoaded
+        ? { question: message }
+        : {
           session_id: currentSessionId,
           messages: newMessages,
-        }),
+        };
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
       });
 
       const data = await response.json();
@@ -71,11 +106,13 @@ function App() {
         },
       ]);
 
-      if (!currentSessionId && data.session_id) {
+      if (!pdfLoaded && !currentSessionId && data.session_id) {
         setCurrentSessionId(data.session_id);
       }
 
-      loadSessions();
+      if (!pdfLoaded) {
+        loadSessions();
+      }
     } catch (error) {
       setMessages([
         ...newMessages,
@@ -126,14 +163,18 @@ function App() {
       <main className="chat-container">
         <header className="chat-header">
           <h1>Study Assistant</h1>
-          <p>Ask questions, revise lessons, and learn faster.</p>
+          <p>
+            {pdfLoaded
+              ? "PDF mode active. Ask questions about your uploaded document."
+              : "Ask questions, revise lessons, and learn faster."}
+          </p>
         </header>
 
         <section className="messages">
           {messages.length === 0 && (
             <div className="welcome">
               <h2>Welcome 👋</h2>
-              <p>Start a new conversation or select one from Recents.</p>
+              <p>Start a new conversation or upload a PDF.</p>
             </div>
           )}
 
@@ -161,6 +202,12 @@ function App() {
         </section>
 
         <div className="input-area">
+          <input
+            type="file"
+            accept="application/pdf"
+            onChange={handleFileUpload}
+          />
+
           <div className="quick-actions">
             <button onClick={() => setMessage("Explain this simply: " + message)}>
               Explain
@@ -180,7 +227,11 @@ function App() {
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask your question..."
+            placeholder={
+              pdfLoaded
+                ? "Ask something about the uploaded PDF..."
+                : "Ask your question..."
+            }
           />
 
           <button className="send-button" onClick={sendMessage} disabled={loading}>
