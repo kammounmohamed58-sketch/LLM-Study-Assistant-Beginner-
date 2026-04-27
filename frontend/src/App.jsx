@@ -207,6 +207,14 @@ function App() {
             accept="application/pdf"
             onChange={handleFileUpload}
           />
+          {pdfLoaded && (
+            <button
+              style={{ background: "#ef4444", color: "white", padding: "6px 10px", borderRadius: "8px" }}
+              onClick={() => setPdfLoaded(false)}
+            >
+              ❌ Exit PDF Mode
+            </button>
+          )}
 
           <div className="quick-actions">
             <button onClick={() => setMessage("Explain this simply: " + message)}>
